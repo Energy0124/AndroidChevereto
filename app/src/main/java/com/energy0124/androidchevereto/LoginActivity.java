@@ -4,6 +4,9 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
+import android.app.Activity;
+import android.content.ClipData;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
@@ -29,6 +32,7 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.inputmethod.EditorInfo;
 import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -77,6 +81,11 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
     //    private Button mMenuButton;
 //    private Button mUploadButton;
     private boolean shouldHideMenuButton = true;
+    private ValueCallback<Uri> uploadMessage;
+    private ValueCallback<Uri[]> uploadMessageAboveL;
+    private final static int FILE_CHOOSER_RESULT_CODE = 10000;
+
+
 
     public void setOnLoginFinishedEventListener(OnLoginFinishedEventListener onLoginFinishedEventListener) {
         this.onLoginFinishedEventListener = onLoginFinishedEventListener;
@@ -125,7 +134,16 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         mWebView = (WebView) findViewById(R.id.chevereto_view);
         WebSettings webSettings = mWebView.getSettings();
         webSettings.setJavaScriptEnabled(true);
+        mWebView.setWebChromeClient(new WebChromeClient(){
+            @Override
+            public boolean onShowFileChooser(WebView webView, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+                uploadMessageAboveL = filePathCallback;
+                openImageChooserActivity();
+                return true;
+            }
+        });
         mWebView.setWebViewClient(new WebViewClient() {
+
             public void onPageFinished(WebView view, String url) {
                 // do your stuff here
                 Log.d("js", url);
@@ -235,6 +253,52 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
         // system behavior (probably exit the activity)
         return super.onKeyDown(keyCode, event);
     }
+    private void openImageChooserActivity() {
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        startActivityForResult(Intent.createChooser(i, "Image Chooser"), FILE_CHOOSER_RESULT_CODE);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == FILE_CHOOSER_RESULT_CODE) {
+            if (null == uploadMessage && null == uploadMessageAboveL) return;
+            Uri result = data == null || resultCode != RESULT_OK ? null : data.getData();
+            if (uploadMessageAboveL != null) {
+                onActivityResultAboveL(requestCode, resultCode, data);
+            } else if (uploadMessage != null) {
+                uploadMessage.onReceiveValue(result);
+                uploadMessage = null;
+            }
+        }
+    }
+
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    private void onActivityResultAboveL(int requestCode, int resultCode, Intent intent) {
+        if (requestCode != FILE_CHOOSER_RESULT_CODE || uploadMessageAboveL == null)
+            return;
+        Uri[] results = null;
+        if (resultCode == Activity.RESULT_OK) {
+            if (intent != null) {
+                String dataString = intent.getDataString();
+                ClipData clipData = intent.getClipData();
+                if (clipData != null) {
+                    results = new Uri[clipData.getItemCount()];
+                    for (int i = 0; i < clipData.getItemCount(); i++) {
+                        ClipData.Item item = clipData.getItemAt(i);
+                        results[i] = item.getUri();
+                    }
+                }
+                if (dataString != null)
+                    results = new Uri[]{Uri.parse(dataString)};
+            }
+        }
+        uploadMessageAboveL.onReceiveValue(results);
+        uploadMessageAboveL = null;
+    }
+
 
     private void populateAutoComplete() {
         if (!mayRequestContacts()) {
@@ -345,7 +409,6 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
             });
             mWebView.evaluateJavascript(" $('#login-subject').val('" + email + "');" +
                             "$('#login-password').val('" + password + "');"
-                            //todo: check keep login
                             + "$('#form-keep-login').prop('checked', true);"
                             + "$(' form > div.btn-container > button').click()"
                     , new ValueCallback<String>() {
@@ -361,13 +424,13 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
     }
 
     private boolean isEmailValid(String email) {
-        //TODO: Replace this with your own logic
+
         return true;
 //        return email.contains("@");
     }
 
     private boolean isPasswordValid(String password) {
-        //TODO: Replace this with your own logic
+
         return true;
 //        return password.length() > 4;
     }
@@ -561,7 +624,7 @@ public class LoginActivity extends AppCompatActivity implements LoaderCallbacks<
 
             synchronized (lock) {
                 try {
-                    lock.wait();
+                    lock.wait(10000);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
